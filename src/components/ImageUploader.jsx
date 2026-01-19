@@ -83,74 +83,78 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                 if (onProcessingEnd) onProcessingEnd();
 
             } else {
-                // Local Fallback Mode
+                // [Zero-Base Rewrite] Robust Local OCR Mode
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
 
-                    // Preprocessing: Scale, Grayscale, Binarize
-                    const scale = 2.5;
+                    // 1. Smart Preprocessing (Canvas Filters)
+                    // Tesseract works best on: High Contrast, Black Text, White Background.
+                    const scale = 2.0;
                     canvas.width = img.width * scale;
                     canvas.height = img.height * scale;
 
+                    // Apply filters BEFORE drawing to get clean Grayscale
+                    ctx.filter = 'grayscale(100%) contrast(150%)';
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
+                    // 2. Smart Invert (Check Content Brightness)
                     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    let totalBrightness = 0;
                     const d = imgData.data;
-
-                    // 1. Grayscale & Contrast Stretching & Binarization
-                    for (let i = 0; i < d.length; i += 4) {
-                        let avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-
-                        // Contrast Boost
-                        avg = avg < 128 ? avg * 0.8 : avg * 1.2;
-
-                        // Binarization (Thresholding)
-                        const threshold = 140;
-                        const v = avg > threshold ? 255 : 0;
-
-                        d[i] = v;     // R
-                        d[i + 1] = v; // G
-                        d[i + 2] = v; // B
+                    // Sample every 40th pixel to speed up
+                    for (let i = 0; i < d.length; i += 40) {
+                        // RGB average
+                        totalBrightness += (d[i] + d[i + 1] + d[i + 2]) / 3;
                     }
-                    ctx.putImageData(imgData, 0, 0);
+                    const avgBrightness = totalBrightness / (d.length / 40);
+
+                    // If average brightness is low (< 110), it implies Dark Mode (White Text on Dark).
+                    // Tesseract HATES White text. We must INVERT.
+                    if (avgBrightness < 110) {
+                        console.log("Dark background detected (" + avgBrightness.toFixed(0) + "). Inverting colors.");
+                        ctx.globalCompositeOperation = 'difference';
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.globalCompositeOperation = 'source-over'; // Reset
+                    }
 
                     const dataUrl = canvas.toDataURL('image/jpeg');
 
-                    // Tesseract.js processing
+                    // 3. Tesseract Processing
                     Tesseract.recognize(
                         dataUrl,
                         'eng',
                         {
                             logger: m => {
-                                if (m.status === 'recognizing text') {
-                                    setProgress(parseInt(m.progress * 100));
-                                }
+                                if (m.status === 'recognizing text') setProgress(parseInt(m.progress * 100));
                             },
-                            // Re-enable PSM 6 (Single Uniform Block) now that image is clean B&W
-                            tessedit_pageseg_mode: 6,
-                            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:/ '
+                            // PSM 3 = Auto (Robust). PSM 6 = Block. 
+                            // Auto is better if the user uploads a screenshot with UI elements.
+                            tessedit_pageseg_mode: 3,
+                            // No whitelist: Let Tesseract see everything to understand layout.
                         }
                     ).then(({ data: { text } }) => {
                         console.log("Raw OCR Text:", text);
                         localStorage.setItem('last_ocr_text', text);
 
-                        const parsedEvents = parseScheduleText(text);
+                        // 4. Robust Fuzzy Parsing
+                        const parsedEvents = parseScheduleTextRobust(text);
 
                         if (Object.keys(parsedEvents).length === 0) {
-                            alert("일정을 찾지 못했습니다. (이미지가 너무 복잡하거나 글자가 작습니다)");
+                            alert("⚠️ 일정을 찾지 못했습니다.\n\nTesseract가 텍스트를 읽지 못했습니다. 'Debug'를 눌러 읽힌 텍스트가 있는지 확인하세요.");
                         } else {
-                            alert(`${Object.keys(parsedEvents).length}개의 일정을 찾았습니다!`);
+                            alert(`✅ ${Object.keys(parsedEvents).length}개의 일정을 찾았습니다!`);
                         }
 
                         if (onScheduleParsed) onScheduleParsed(parsedEvents);
-
                         setLoading(false);
                         setProgress(0);
                         if (onProcessingEnd) onProcessingEnd();
                     }).catch(err => {
                         console.error(err);
+                        alert("OCR Error: " + err.message);
                         setLoading(false);
                         if (onProcessingEnd) onProcessingEnd();
                     });
@@ -160,65 +164,67 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
         };
     };
 
-    // Advanced Parsing Logic (Heuristic for Grid)
-    const parseScheduleText = (text) => {
-        console.log("Parsing text...", text);
-        const lines = text.split(/\r?\n/);
+    // [Zero-Base Rewrite] Robust Fuzzy Parser
+    const parseScheduleTextRobust = (text) => {
+        console.log("Starting Robust Parsing...");
         const events = {};
 
-        const flightRegex = /(KE\d{3,4})/i;
-        const routeRegex = /([A-Z]{3}-[A-Z]{3})/;
-        const timeRegex = /(\d{2}:\d{2})/;
-        const atdoRegex = /(ATDO|DO|AL|OFF)/i;
-        const dayRegex = /\b([1-9]|[12]\d|3[01])\b/;
+        // Split by lines but also clean up massive whitespace
+        const lines = text.split(/\n+/);
 
         let currentDay = null;
 
-        lines.forEach((line, index) => {
-            const cleanLine = line.trim();
-            if (!cleanLine || cleanLine.length < 2) return;
+        // REGEX PATTERNS (Relaxed)
+        const dayHeaderRegex = /^[\s\W]*(\d{1,2})[\s\W]*$/;
+        const flightRegex = /K\s*E\s*(\d{3,4})/i;
+        const routeRegex = /([A-Z]{3})[\s-]([A-Z]{3})/;
 
-            const dayMatch = cleanLine.match(dayRegex);
+        lines.forEach((line) => {
+            const clean = line.trim();
+            if (clean.length < 2) return;
+
+            // Strategy 1: Header Day?
+            const dayMatch = clean.match(dayHeaderRegex);
             if (dayMatch) {
-                const num = parseInt(dayMatch[0]);
-                const hasTime = cleanLine.includes(':');
-                const isStart = cleanLine.indexOf(dayMatch[0]) === 0;
-                if (!hasTime || isStart) {
+                const num = parseInt(dayMatch[1]);
+                if (num >= 1 && num <= 31) {
+                    currentDay = num;
+                    return;
+                }
+            }
+
+            // Strategy 2: Inline Day? "15 KE081"
+            const startDayMatch = clean.match(/^(\d{1,2})\b/);
+            if (startDayMatch) {
+                const num = parseInt(startDayMatch[1]);
+                if (num >= 1 && num <= 31) {
                     currentDay = num;
                 }
             }
 
+            // Detect Data
             if (currentDay) {
-                const dateKey = `2026-01-${currentDay.toString().padStart(2, '0')}`; // Hardcoded 2026-01 for V1
+                const dateKey = `2026-01-${currentDay.toString().padStart(2, '0')}`;
 
-                const flightMatch = cleanLine.match(flightRegex);
-                if (flightMatch) {
+                // Flight Matches (KE...)
+                const fMatch = clean.match(flightRegex);
+                if (fMatch) {
                     if (!events[dateKey]) events[dateKey] = { type: 'FLIGHT' };
+                    events[dateKey].flightNumber = `KE${fMatch[1]}`;
                     events[dateKey].type = 'FLIGHT';
-                    events[dateKey].flightNumber = flightMatch[0];
                 }
 
-                const routeMatch = cleanLine.match(routeRegex);
-                if (routeMatch) {
+                // Route Matches (ICN-JFK)
+                const rMatch = clean.match(routeRegex);
+                if (rMatch) {
                     if (!events[dateKey]) events[dateKey] = { type: 'FLIGHT' };
-                    events[dateKey].route = routeMatch[0];
+                    events[dateKey].route = `${rMatch[1]}-${rMatch[2]}`;
                 }
 
-                const timeMatch = cleanLine.match(timeRegex);
-                if (timeMatch) {
-                    if (events[dateKey]) {
-                        const exist = events[dateKey].time || '';
-                        if (!exist.includes(timeMatch[0])) {
-                            events[dateKey].time = exist ? `${exist}-${timeMatch[0]}` : timeMatch[0];
-                        }
-                    }
-                }
-
-                if (atdoRegex.test(cleanLine)) {
-                    if (/\b(ATDO|DO|AL|OFF)\b/i.test(cleanLine)) {
-                        if (!events[dateKey] || events[dateKey].type !== 'FLIGHT') {
-                            events[dateKey] = { type: 'ATDO' };
-                        }
+                // Status
+                if (/ATDO|DO|AL|OFF|LAYOVER/i.test(clean)) {
+                    if (!events[dateKey] || events[dateKey].type !== 'FLIGHT') {
+                        events[dateKey] = { type: 'ATDO' };
                     }
                 }
             }
