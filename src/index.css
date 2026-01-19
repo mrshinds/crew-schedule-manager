@@ -1,0 +1,33 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  --color-bg: #f9f9f9;
+  --color-border: #ddd;
+  --color-text: #333;
+  --color-primary: #007bff;
+  --color-flight-bg: #e3f2fd;
+  --color-flight-text: #0d47a1;
+  --color-atdo-bg: #e8f5e9;
+  /* Light Green for Rest */
+  --color-atdo-text: #1b5e20;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: flex-start;
+  /* Changed from center */
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+#root {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}

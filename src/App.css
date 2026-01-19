@@ -1,0 +1,55 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  gap: 20px;
+  height: calc(100vh - 100px);
+  /* Fill remaining height */
+  overflow: hidden;
+}
+
+.left-panel {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.right-panel {
+  flex: 1;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.month-nav button {
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+}

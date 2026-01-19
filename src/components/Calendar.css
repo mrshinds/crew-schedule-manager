@@ -1,0 +1,128 @@
+.calendar-container {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    background: white;
+    font-family: inherit;
+}
+
+/* Header: Month Title */
+.calendar-header {
+    padding: 10px;
+    border-bottom: 2px solid var(--color-border);
+    font-weight: bold;
+    font-size: 1.2rem;
+}
+
+/* Weekday Header */
+.weekdays-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-bottom: 1px solid var(--color-border);
+    background: #f8f9fa;
+}
+
+.weekday-cell {
+    padding: 10px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #555;
+    border-right: 1px solid #eee;
+}
+
+.weekday-cell:last-child {
+    border-right: none;
+}
+
+.weekday-cell.sun {
+    color: red;
+}
+
+.weekday-cell.sat {
+    color: blue;
+}
+
+/* Days Grid */
+.days-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    /* Auto rows based on content, but min height for uniform look */
+    grid-auto-rows: minmax(100px, auto);
+}
+
+.day-cell {
+    border-right: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    position: relative;
+    background: white;
+}
+
+.day-cell:nth-child(7n) {
+    border-right: none;
+}
+
+/* Date Labels */
+.date-label {
+    font-size: 0.8rem;
+    margin-bottom: 5px;
+    text-align: right;
+}
+
+.day-cell.other-month {
+    background: #f9f9f9;
+    color: #ccc;
+}
+
+.day-cell.sun .date-label {
+    color: red;
+}
+
+.day-cell.sat .date-label {
+    color: blue;
+}
+
+/* Event Styling */
+.event-block {
+    font-size: 0.75rem;
+    padding: 4px;
+    margin-top: 2px;
+    border-radius: 4px;
+    margin-bottom: 2px;
+}
+
+/* Flight */
+.event-block.flight {
+    background-color: var(--color-flight-bg);
+    color: var(--color-flight-text);
+    border: 1px solid #bbdefb;
+}
+
+/* ATDO / Rest */
+.event-block.atdo {
+    background-color: var(--color-atdo-bg);
+    color: var(--color-atdo-text);
+    border: 1px solid #c8e6c9;
+    text-align: center;
+    font-weight: bold;
+}
+
+/* Standby (Empty/Wait) - Optional explicit styling if needed */
+.event-block.standby {
+    color: #999;
+    text-align: center;
+    font-style: italic;
+}
+
+.flight-route {
+    font-weight: bold;
+    display: block;
+}
+
+.flight-time {
+    display: block;
+    font-size: 0.7rem;
+}
