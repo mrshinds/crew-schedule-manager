@@ -30,26 +30,25 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                 const base64Data = event.target.result.split(',')[1];
                 try {
                     const genAI = new GoogleGenerativeAI(apiKey);
-                    // Updated to 2.0 Flash (2026 Standard)
-                    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+                    // Updated to gemini-1.5-flash (Standard) to fix 404/Version issues
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
                     const prompt = `
                     Analyze this flight crew schedule image. Extract all events including Flights, Layovers (ATDO, DO, AL, OFF, LO, STANDBY).
                     Identify the Year and Month from the image if possible (e.g., SKD_2026.01). If not, default to 2026-01.
                     
-                    Return ONLY a valid JSON object with detailed keys. Do not use Markdown code blocks.
+                    Return ONLY a valid JSON object.
                     Format:
                     {
                         "YYYY-MM-DD": {
                             "type": "FLIGHT" | "ATDO" | "STANDBY" | "OFF" | "LAYOVER",
                             "flightNumber": "KE...",
                             "route": "XXX-YYY",
-                            "time": "HH:MM-HH:MM" (optional),
+                            "time": "HH:MM-HH:MM",
                             "note": "Any extra info"
                         }
                     }
-                    For multi-day flights, just index by the start date. Use standard airport codes (ICN, JFK, etc).
-                    If a day has multiple info, prioritize the Flight.
+                    Use standard airport codes. Correct partial scans (e.g. 'CN-JFK' -> 'ICN-JFK').
                     `;
 
                     const result = await model.generateContent([
@@ -164,71 +163,88 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
         };
     };
 
-    // [Zero-Base Rewrite] Robust Fuzzy Parser
+    // [New] Stream-Based Fuzzy Parser (Handles broken grids better)
     const parseScheduleTextRobust = (text) => {
-        console.log("Starting Robust Parsing...");
+        console.log("Starting Stream Parsing...", text);
         const events = {};
 
-        // Split by lines but also clean up massive whitespace
-        const lines = text.split(/\n+/);
+        // 1. Normalize Text
+        // Replace common OCR errors
+        let cleanText = text
+            .replace(/\|/g, ' ') // Pipes to spaces
+            .replace(/\r?\n/g, ' ') // Newlines to spaces (treat as one long stream)
+            .replace(/€/g, 'E')
+            .replace(/CN-/g, 'ICN-') // Fix specific ICN broken prefix
+            .replace(/-CN/g, '-ICN')
+            .replace(/SYC/g, 'SYD')
+            .replace(/NRT/g, 'NRT')
+            .replace(/NGO/g, 'NGO');
+
+        // 2. Tokenize
+        const tokens = cleanText.split(/\s+/);
 
         let currentDay = null;
 
-        // REGEX PATTERNS (Relaxed)
-        const dayHeaderRegex = /^[\s\W]*(\d{1,2})[\s\W]*$/;
-        const flightRegex = /K\s*E\s*(\d{3,4})/i;
-        const routeRegex = /([A-Z]{3})[\s-]([A-Z]{3})/;
+        // REGEX
+        const dayRegex = /^(\d{1,2})([^\d]|$)/; // Matches "10" in "10.4" or "10"
+        const flightRegex = /^K[E€]?\s*(\d{3,4})$/i; // Matches KE123, K E123, KE 123
+        const routeRegex = /^([A-Z]{3})-?([A-Z]{3})$/; // Matches ICN-JFK, ICNJFK
+        const statusRegex = /^(ATDO|DO|AL|OFF|LO|STBY|STANDBY)$/i;
 
-        lines.forEach((line) => {
-            const clean = line.trim();
-            if (clean.length < 2) return;
+        tokens.forEach((token, index) => {
+            const cleanToken = token.trim().toUpperCase();
+            if (cleanToken.length < 1) return;
 
-            // Strategy 1: Header Day?
-            const dayMatch = clean.match(dayHeaderRegex);
-            if (dayMatch) {
-                const num = parseInt(dayMatch[1]);
+            // CHECK: Date
+            const dMatch = cleanToken.match(dayRegex);
+            if (dMatch) {
+                const num = parseInt(dMatch[1]);
+                // Heuristic: If number is 1-31, it MIGHT be a date.
+                // But it could be a time "10:00" or flight "KE101".
+                // If it looks like "10.4" or just "10", we take it as date if previous wasn't a flight num.
                 if (num >= 1 && num <= 31) {
-                    currentDay = num;
-                    return;
-                }
-            }
-
-            // Strategy 2: Inline Day? "15 KE081"
-            const startDayMatch = clean.match(/^(\d{1,2})\b/);
-            if (startDayMatch) {
-                const num = parseInt(startDayMatch[1]);
-                if (num >= 1 && num <= 31) {
-                    currentDay = num;
-                }
-            }
-
-            // Detect Data
-            if (currentDay) {
-                const dateKey = `2026-01-${currentDay.toString().padStart(2, '0')}`;
-
-                // Flight Matches (KE...)
-                const fMatch = clean.match(flightRegex);
-                if (fMatch) {
-                    if (!events[dateKey]) events[dateKey] = { type: 'FLIGHT' };
-                    events[dateKey].flightNumber = `KE${fMatch[1]}`;
-                    events[dateKey].type = 'FLIGHT';
-                }
-
-                // Route Matches (ICN-JFK)
-                const rMatch = clean.match(routeRegex);
-                if (rMatch) {
-                    if (!events[dateKey]) events[dateKey] = { type: 'FLIGHT' };
-                    events[dateKey].route = `${rMatch[1]}-${rMatch[2]}`;
-                }
-
-                // Status
-                if (/ATDO|DO|AL|OFF|LAYOVER/i.test(clean)) {
-                    if (!events[dateKey] || events[dateKey].type !== 'FLIGHT') {
-                        events[dateKey] = { type: 'ATDO' };
+                    // Check if it's not part of a time (contains :)
+                    if (!cleanToken.includes(':')) {
+                        currentDay = num;
                     }
                 }
             }
+
+            if (!currentDay) return; // Need a date context first
+
+            const dateKey = `2026-01-${currentDay.toString().padStart(2, '0')}`;
+
+            // CHECK: Flight (KE...)
+            // Sometimes flight is "112" (missing KE). 
+            // If we have a previous 'KE', we might attach it. For now, strict KE checking.
+            const fMatch = cleanToken.match(flightRegex);
+            if (fMatch) {
+                if (!events[dateKey]) events[dateKey] = { type: 'FLIGHT' };
+                events[dateKey].flightNumber = `KE${fMatch[1]}`;
+                events[dateKey].type = 'FLIGHT';
+            }
+            // Heuristic A: If token is just 3-4 digits and we assume it's a flight because we found a route nearby?
+            // Skip for safety unless explicit.
+
+            // CHECK: Route (XXX-YYY)
+            const rMatch = cleanToken.match(routeRegex);
+            if (rMatch) {
+                if (!events[dateKey]) events[dateKey] = { type: 'FLIGHT' };
+                // Fix partial 'CN'
+                let dep = rMatch[1] === 'CN' ? 'ICN' : rMatch[1];
+                let arr = rMatch[2] === 'CN' ? 'ICN' : rMatch[2];
+                events[dateKey].route = `${dep}-${arr}`;
+            }
+
+            // CHECK: Status
+            if (statusRegex.test(cleanToken)) {
+                if (!events[dateKey] || events[dateKey].type !== 'FLIGHT') {
+                    events[dateKey] = { type: 'ATDO', note: cleanToken };
+                }
+            }
         });
+
+        console.log("Stream Parsed Result:", events);
         return events;
     };
 
@@ -254,7 +270,7 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                     }}
                 />
                 <div style={{ fontSize: '0.8rem', color: '#555' }}>
-                    * Enter your key to use <b>Gemini 1.5 Pro</b> for 99.9% accurate schedule recognition.<br />
+                    * Enter your key to use <b>Gemini 1.5 Flash</b> for high speed analysis.<br />
                     * Without a key, it will use basic local OCR (lower accuracy).
                 </div>
             </div>
