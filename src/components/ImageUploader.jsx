@@ -89,8 +89,8 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
 
-                    // Scale 2x for better small text recognition
-                    const scale = 2;
+                    // Scale 3x for even better small text recognition
+                    const scale = 3;
                     canvas.width = img.width * scale;
                     canvas.height = img.height * scale;
 
@@ -101,14 +101,19 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                     // Tesseract.js processing
                     Tesseract.recognize(
                         dataUrl,
-                        'eng',
+                        'eng', // Keep eng as primary for codes. Adding Kor increases size huge amount (20MB+) which might fail or be slow. 
                         {
                             logger: m => {
                                 if (m.status === 'recognizing text') {
                                     setProgress(parseInt(m.progress * 100));
                                 }
                             },
-                            tessedit_pageseg_mode: 6,
+                            // PSM 6 is often too rigid for complex grids. Auto (default) is better if lines are clean.
+                            // But for noisy backgrounds, PSM 1 (Sparse text) or PSM 3 (Fully auto) might be safer.
+                            // Let's remove explicit PSM to default to Auto (3).
+
+                            // Whitelist to reduce noise (only allow relevant chars)
+                            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:/ '
                         }
                     ).then(({ data: { text } }) => {
                         console.log("Raw OCR Text:", text);
