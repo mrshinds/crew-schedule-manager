@@ -30,6 +30,7 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                 const base64Data = event.target.result.split(',')[1];
                 try {
                     const genAI = new GoogleGenerativeAI(apiKey);
+                    // Updated to 1.5 Pro for stability (Flash 404s)
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
                     const prompt = `
@@ -67,7 +68,6 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
 
                     // Clean and Parse JSON
                     let jsonStr = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    // Sometimes it returns array, sometimes object. Handle robustly.
                     const parsedEvents = JSON.parse(jsonStr);
 
                     alert(`${Object.keys(parsedEvents).length} events found via Gemini!`);
@@ -89,30 +89,47 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
 
-                    // Scale 3x for even better small text recognition
-                    const scale = 3;
+                    // Preprocessing: Scale, Grayscale, Binarize
+                    const scale = 2.5;
                     canvas.width = img.width * scale;
                     canvas.height = img.height * scale;
 
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const d = imgData.data;
+
+                    // 1. Grayscale & Contrast Stretching & Binarization
+                    for (let i = 0; i < d.length; i += 4) {
+                        let avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+
+                        // Contrast Boost
+                        avg = avg < 128 ? avg * 0.8 : avg * 1.2;
+
+                        // Binarization (Thresholding)
+                        const threshold = 140;
+                        const v = avg > threshold ? 255 : 0;
+
+                        d[i] = v;     // R
+                        d[i + 1] = v; // G
+                        d[i + 2] = v; // B
+                    }
+                    ctx.putImageData(imgData, 0, 0);
 
                     const dataUrl = canvas.toDataURL('image/jpeg');
 
                     // Tesseract.js processing
                     Tesseract.recognize(
                         dataUrl,
-                        'eng', // Keep eng as primary for codes. Adding Kor increases size huge amount (20MB+) which might fail or be slow. 
+                        'eng',
                         {
                             logger: m => {
                                 if (m.status === 'recognizing text') {
                                     setProgress(parseInt(m.progress * 100));
                                 }
                             },
-                            // PSM 6 is often too rigid for complex grids. Auto (default) is better if lines are clean.
-                            // But for noisy backgrounds, PSM 1 (Sparse text) or PSM 3 (Fully auto) might be safer.
-                            // Let's remove explicit PSM to default to Auto (3).
-
-                            // Whitelist to reduce noise (only allow relevant chars)
+                            // Re-enable PSM 6 (Single Uniform Block) now that image is clean B&W
+                            tessedit_pageseg_mode: 6,
                             tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:/ '
                         }
                     ).then(({ data: { text } }) => {
@@ -172,7 +189,7 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
             }
 
             if (currentDay) {
-                const dateKey = `2026-01-${currentDay.toString().padStart(2, '0')}`;
+                const dateKey = `2026-01-${currentDay.toString().padStart(2, '0')}`; // Hardcoded 2026-01 for V1
 
                 const flightMatch = cleanLine.match(flightRegex);
                 if (flightMatch) {
