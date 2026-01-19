@@ -8,11 +8,7 @@ import './App.css'
 
 function App() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1)); // Defaulting to Jan 2026 as per screenshot for dev
-  const [scheduleData, setScheduleData] = useState({
-    "2026-01-01": { type: 'FLIGHT', flightNumber: 'KE085', route: 'ICN-JFK', time: '19:30-19:30' },
-    "2026-01-04": { type: 'ATDO' },
-    "2026-01-08": { type: 'FLIGHT', flightNumber: 'KE082', route: 'JFK-ICN', time: '12:00-' }
-  });
+  const [scheduleData, setScheduleData] = useState({});
   const [selectedFlight, setSelectedFlight] = useState(null);
 
   const handleDateSelect = (dateKey) => {

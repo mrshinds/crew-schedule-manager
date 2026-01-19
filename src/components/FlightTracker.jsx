@@ -126,8 +126,8 @@ const FlightTracker = ({ selectedFlight }) => {
             </div>}
 
             <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-                <ambientLight intensity={1} />
-                <pointLight position={[10, 10, 10]} intensity={2} />
+                <ambientLight intensity={3} /> {/* Increased from 1 */}
+                <pointLight position={[10, 10, 10]} intensity={3} />
                 <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
                 <Sphere position={[0, 0, 0]} textureUrl="/earth.jpg" size={EARTH_RADIUS} />
