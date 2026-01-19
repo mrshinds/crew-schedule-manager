@@ -7,7 +7,7 @@ import { airports } from '../utils/airports';
 const EARTH_RADIUS = 2;
 
 function Sphere({ position, textureUrl, size }) {
-    const texture = useMemo(() => new THREE.TextureLoader().load(textureUrl), [textureUrl]);
+    const texture = useMemo(() => new THREE.TextureLoader().load('./earth.jpg'), []);
     return (
         <mesh position={position}>
             <sphereGeometry args={[size, 64, 64]} />

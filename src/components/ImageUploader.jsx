@@ -14,39 +14,73 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
         setLoading(true);
         if (onProcessingStart) onProcessingStart();
 
-        // Tesseract.js processing
-        Tesseract.recognize(
-            file,
-            'eng', // We might need 'kor' later? Mostly flight codes are ENG.
-            {
-                logger: m => {
-                    if (m.status === 'recognizing text') {
-                        setProgress(parseInt(m.progress * 100));
-                    }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                // Preprocessing: Scale Up & Grayscale
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Scale 2x for better small text recognition
+                const scale = 2;
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                // Grayscale & Contrast
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    // Simple binarization/contrast boost
+                    const contrast = avg > 128 ? 255 : 0;
+                    data[i] = contrast;     // R
+                    data[i + 1] = contrast; // G
+                    data[i + 2] = contrast; // B
                 }
-            }
-        ).then(({ data: { text } }) => {
-            console.log("Raw OCR Text:", text); // Debugging
-            localStorage.setItem('last_ocr_text', text); // Save for debug UI
+                ctx.putImageData(imgData, 0, 0);
 
-            const parsedEvents = parseScheduleText(text);
+                const dataUrl = canvas.toDataURL('image/jpeg');
 
-            if (Object.keys(parsedEvents).length === 0) {
-                alert("일정을 찾지 못했습니다. 디버그 메뉴(Debug)에서 인식된 텍스트를 확인해주세요.");
-            } else {
-                alert(`${Object.keys(parsedEvents).length}개의 일정을 찾았습니다!`);
-            }
+                // Tesseract.js processing on processed image
+                Tesseract.recognize(
+                    dataUrl,
+                    'eng',
+                    {
+                        logger: m => {
+                            if (m.status === 'recognizing text') {
+                                setProgress(parseInt(m.progress * 100));
+                            }
+                        }
+                    }
+                ).then(({ data: { text } }) => {
+                    console.log("Raw OCR Text:", text); // Debugging
+                    localStorage.setItem('last_ocr_text', text);
 
-            if (onScheduleParsed) onScheduleParsed(parsedEvents);
+                    const parsedEvents = parseScheduleText(text);
 
-            setLoading(false);
-            setProgress(0);
-            if (onProcessingEnd) onProcessingEnd();
-        }).catch(err => {
-            console.error(err);
-            setLoading(false);
-            if (onProcessingEnd) onProcessingEnd();
-        });
+                    if (Object.keys(parsedEvents).length === 0) {
+                        alert("일정을 찾지 못했습니다. 디버그 메뉴(Debug)에서 인식된 텍스트를 확인해주세요. (이미지가 너무 흐리거나 작을 수 있습니다)");
+                    } else {
+                        alert(`${Object.keys(parsedEvents).length}개의 일정을 찾았습니다!`);
+                    }
+
+                    if (onScheduleParsed) onScheduleParsed(parsedEvents);
+
+                    setLoading(false);
+                    setProgress(0);
+                    if (onProcessingEnd) onProcessingEnd();
+                }).catch(err => {
+                    console.error(err);
+                    setLoading(false);
+                    if (onProcessingEnd) onProcessingEnd();
+                });
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
     };
 
     // Basic Parsing Logic
