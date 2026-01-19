@@ -42,6 +42,14 @@ const FlightTracker = ({ selectedFlight }) => {
             [startAirport.lat, startAirport.lon],
             [endAirport.lat, endAirport.lon]
         ];
+    } else if (selectedFlight && selectedFlight.route) {
+        // Debug missing airports
+        const parts = selectedFlight.route.split('-');
+        if (parts.length === 2) {
+            if (!airports[parts[0]]) alert(`Airport Code Not Found in Database: ${parts[0]}`);
+            if (!airports[parts[1]]) alert(`Airport Code Not Found in Database: ${parts[1]}`);
+        }
+        startAirport = airports["ICN"]; // Fallback to avoid crash
     } else {
         // Default to ICN view if nothing selected
         startAirport = airports["ICN"];

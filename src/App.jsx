@@ -23,7 +23,7 @@ function App() {
   return (
     <div className="app-container">
       <header>
-        <h1>Crew Schedule Manager</h1>
+        <h1>Crew Schedule Manager v2.0 (Map)</h1>
         <div className="month-nav">
           <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}>&lt;</button>
           <span>{currentDate.getFullYear()}.{String(currentDate.getMonth() + 1).padStart(2, '0')}</span>
