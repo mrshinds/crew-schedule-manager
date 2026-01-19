@@ -30,8 +30,8 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
                 const base64Data = event.target.result.split(',')[1];
                 try {
                     const genAI = new GoogleGenerativeAI(apiKey);
-                    // Updated to 1.5 Pro for stability (Flash 404s)
-                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+                    // Updated to 2.0 Flash (2026 Standard)
+                    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
                     const prompt = `
                     Analyze this flight crew schedule image. Extract all events including Flights, Layovers (ATDO, DO, AL, OFF, LO, STANDBY).
