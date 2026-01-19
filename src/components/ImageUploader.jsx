@@ -29,18 +29,7 @@ const ImageUploader = ({ onScheduleParsed, onProcessingStart, onProcessingEnd })
 
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                // Grayscale & Contrast
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imgData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                    // Simple binarization/contrast boost
-                    const contrast = avg > 128 ? 255 : 0;
-                    data[i] = contrast;     // R
-                    data[i + 1] = contrast; // G
-                    data[i + 2] = contrast; // B
-                }
-                ctx.putImageData(imgData, 0, 0);
+
 
                 const dataUrl = canvas.toDataURL('image/jpeg');
 
